@@ -60,15 +60,21 @@ export async function startTestApp(
   return buildApp(cfg, { fetchImpl, logger: false, ssePingMs: opts.ssePingMs });
 }
 
-/** Cliente HTTP simples que mantém o cookie de sessão (como um navegador). */
+let nextIp = 1;
+
+/** Cliente HTTP simples que mantém o cookie de sessão (como um navegador). Cada cliente tem um IP próprio. */
 export class Client {
   cookie = '';
-  constructor(private app: FastifyInstance) {}
+  constructor(
+    private app: FastifyInstance,
+    public ip = `10.20.${Math.floor(nextIp / 250)}.${nextIp++ % 250}`,
+  ) {}
 
   async req(method: string, url: string, body?: unknown, extraHeaders: Record<string, string> = {}) {
     const res = await this.app.inject({
       method: method as any,
       url,
+      remoteAddress: this.ip,
       payload: body === undefined ? undefined : (body as any),
       headers: { 'x-kzann-csrf': '1', ...(this.cookie ? { cookie: this.cookie } : {}), ...extraHeaders },
     });

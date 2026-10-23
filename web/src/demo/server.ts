@@ -462,6 +462,8 @@ on('POST', '/api/public/:slug/quote', ({ db, params, body }) => quote(db, tenant
 on('POST', '/api/public/:slug/orders', ({ db, params, body }) => {
   const t = tenantBySlug(db, params[0]).id;
   const s = db.settings[t];
+  const replay = body.idempotency_key && db.orders.find((o) => o.tenant_id === t && o.idempotency_key === body.idempotency_key);
+  if (replay) return { id: replay.id, number: replay.number, token: replay.public_token, replayed: true };
   if (!isOpen(db, t)) fail(409, 'closed', 'A pizzaria está fechada no momento');
   const name = String(body.customer?.name ?? '').trim();
   const phone = String(body.customer?.phone ?? '').replace(/\D/g, '');
@@ -487,7 +489,7 @@ on('POST', '/api/public/:slug/orders', ({ db, params, body }) => {
     change_for_cents: body.payment_method === 'cash' ? body.change_for_cents ?? null : null,
     subtotal_cents: q.subtotal_cents, delivery_fee_cents: q.delivery_fee_cents, discount_cents: q.discount_cents, total_cents: q.total_cents,
     coupon_id: q.coupon?.id ?? null, coupon_code: q.coupon?.code ?? null, notes: String(body.notes ?? '').slice(0, 500), eta_minutes: q.eta_minutes,
-    cancel_reason: null, created_at: now(), accepted_at: status === 'accepted' ? now() : null, items: q.items.map((i: any) => ({ id: uid(), ...i })), events: [],
+    idempotency_key: body.idempotency_key ?? null, cancel_reason: null, created_at: now(), accepted_at: status === 'accepted' ? now() : null, items: q.items.map((i: any) => ({ id: uid(), ...i })), events: [],
   };
   addEvent(o, { type: 'created', to_status: status, message: 'Pedido recebido pelo cardápio online' });
   if (q.coupon) db.coupons.find((c) => c.id === q.coupon!.id)!.used_count++;

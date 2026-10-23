@@ -81,7 +81,7 @@ export async function publicRoutes(f: FastifyInstance, app: AppContext) {
     const body = orderSchema.parse(req.body);
     const tenant = await findTenantBySlug(app.db, slug);
     const result = await createOrder(app, tenant, body);
-    return reply.code(201).send(result);
+    return reply.code(result.replayed ? 200 : 201).send(result);
   });
 
   const tokenParams = z.object({ slug: z.string().max(60), token: z.string().min(20).max(64) });

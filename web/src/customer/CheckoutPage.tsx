@@ -29,6 +29,8 @@ export function CheckoutPage() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Uma chave por tentativa de checkout: reenvios (rede instável, toque duplo) devolvem o mesmo pedido.
+  const [idempotencyKey] = useState(() => (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9_-]/g, ''));
 
   useEffect(() => {
     if (!menu) return;
@@ -128,6 +130,7 @@ export function CheckoutPage() {
         change_for_cents: payment === 'cash' && needChange ? changeFor : null,
         coupon_code: coupon,
         notes,
+        idempotency_key: idempotencyKey,
       });
       saveCustomer({ name, phone, email, area, ...address });
       rememberOrder(slug, { token: res.token, number: res.number, created_at: new Date().toISOString() });

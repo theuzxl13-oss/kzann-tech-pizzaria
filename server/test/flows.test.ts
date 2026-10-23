@@ -375,6 +375,38 @@ describe('Pix online via gateway (webhook assinado)', () => {
   });
 });
 
+describe('KZ-24: histórico de pedidos', () => {
+  test('lista sem filtros, por nome, por telefone, por número e por período', async () => {
+    const all = expectOk(await owner.a.get('/api/admin/orders?limit=30&offset=0'));
+    assert.ok(all.orders.length >= 3);
+    assert.ok(expectOk(await owner.a.get('/api/admin/orders?q=Carlos')).orders.length >= 1);
+    assert.ok(expectOk(await owner.a.get('/api/admin/orders?q=11977776666')).orders.length >= 1);
+    assert.equal(expectOk(await owner.a.get('/api/admin/orders?q=%231')).orders[0].number, 1);
+    assert.ok(expectOk(await owner.a.get('/api/admin/orders?from=2020-01-01&to=2030-12-31&q=Carlos')).orders.length >= 1);
+  });
+});
+
+describe('KZ-04: idempotência do pedido', () => {
+  test('mesma chave enviada em paralelo e repetida gera um único pedido', async () => {
+    const body = {
+      items: [pizzaItem()], fulfillment: 'pickup', customer: { name: 'Gil Repetido', phone: '11922221111' },
+      payment_method: 'cash', idempotency_key: 'chk_teste_idem_000001',
+    };
+    const c = new Client(app);
+    const [r1, r2] = await Promise.all([c.post('/api/public/bella/orders', body), c.post('/api/public/bella/orders', body)]);
+    assert.deepEqual([r1.status, r2.status].sort(), [200, 201]);
+    assert.equal(r1.body.token, r2.body.token);
+    const again = await c.post('/api/public/bella/orders', body);
+    assert.equal(again.status, 200);
+    assert.equal(again.body.number, r1.body.number);
+    const list = expectOk(await owner.a.get('/api/admin/orders?q=Gil%20Repetido'));
+    assert.equal(list.orders.length, 1);
+    const other = await c.post('/api/public/bella/orders', { ...body, idempotency_key: 'chk_teste_idem_000002' });
+    assert.equal(other.status, 201);
+    assert.notEqual(other.body.number, r1.body.number);
+  });
+});
+
 describe('tempo real (SSE)', () => {
   test('painel recebe novo pedido via LISTEN/NOTIFY', async () => {
     const address = await app.listen({ port: 0, host: '127.0.0.1' });
@@ -392,13 +424,16 @@ describe('tempo real (SSE)', () => {
         buffer += decoder.decode(value);
       }
     };
-    await waitFor('event: ready');
-    const o = expectOk(await new Client(app).post('/api/public/bella/orders', {
-      items: [pizzaItem()], fulfillment: 'pickup', customer: { name: 'Fábio', phone: '11933332222' }, payment_method: 'card_on_delivery',
-    }), 201);
-    await waitFor(`"orderId":"${o.id}"`);
-    assert.match(buffer, /event: order\.created/);
-    ctrl.abort();
+    try {
+      await waitFor('event: ready');
+      const o = expectOk(await new Client(app).post('/api/public/bella/orders', {
+        items: [pizzaItem()], fulfillment: 'pickup', customer: { name: 'Fábio', phone: '11933332222' }, payment_method: 'card_on_delivery',
+      }), 201);
+      await waitFor(`"orderId":"${o.id}"`);
+      assert.match(buffer, /event: order\.created/);
+    } finally {
+      ctrl.abort();
+    }
   });
 
   // KZ-01: o navegador só detecta conexão morta se receber um evento nomeado periodicamente.
@@ -410,10 +445,13 @@ describe('tempo real (SSE)', () => {
     const decoder = new TextDecoder();
     let buffer = '';
     const deadline = Date.now() + 3000;
-    while (!buffer.includes('event: ping')) {
-      if (Date.now() > deadline) throw new Error(`sem ping; recebido: ${buffer}`);
-      buffer += decoder.decode((await reader.read()).value);
+    try {
+      while (!buffer.includes('event: ping')) {
+        if (Date.now() > deadline) throw new Error(`sem ping; recebido: ${buffer}`);
+        buffer += decoder.decode((await reader.read()).value);
+      }
+    } finally {
+      ctrl.abort();
     }
-    ctrl.abort();
   });
 });

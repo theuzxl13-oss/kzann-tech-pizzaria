@@ -69,6 +69,8 @@ export const orderSchema = quoteSchema.extend({
   payment_method: z.enum(['cash', 'card_on_delivery', 'pix_offline', 'pix_online']),
   change_for_cents: z.number().int().min(0).max(1_000_000).nullish(),
   notes: z.string().trim().max(500).optional().default(''),
+  /** Chave gerada pelo cliente por tentativa de checkout; repetir a chave devolve o mesmo pedido. */
+  idempotency_key: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/, 'Chave de idempotência inválida').optional(),
 });
 
 export type QuoteInput = z.infer<typeof quoteSchema>;
@@ -177,7 +179,41 @@ export async function createOrder(app: AppContext, tenant: TenantRow, input: Ord
     throw badRequest('email_required', 'Informe um e-mail para gerar o Pix');
   }
 
-  const created = await withTenant(app.db, tenant.id, async (tx) => {
+  // KZ-04: a mesma chave de checkout devolve o pedido já criado em vez de duplicar.
+  const findByKey = async () => {
+    if (!input.idempotency_key) return null;
+    const { rows } = await withTenant(app.db, tenant.id, (tx) =>
+      tx.query('SELECT id, number, public_token FROM orders WHERE idempotency_key = $1', [input.idempotency_key]),
+    );
+    return rows[0] ? { id: rows[0].id as string, number: rows[0].number as number, token: rows[0].public_token as string, replayed: true } : null;
+  };
+  const existing = await findByKey();
+  if (existing) return existing;
+
+  let created;
+  try {
+    created = await insertOrder(app, tenant, input);
+  } catch (err) {
+    // Envio concorrente com a mesma chave: o outro terminou primeiro (índice único ou cupom já consumido por ele).
+    const winner = await findByKey();
+    if (winner) return winner;
+    throw err;
+  }
+
+  if (input.payment_method === 'pix_online') {
+    try {
+      await createPixCharge(app, tenant, created.order.id);
+    } catch (err) {
+      await cancelOrderInternal(app, tenant.id, created.order.id, 'Não foi possível gerar o Pix', 'failed');
+      app.log.error({ err, orderId: created.order.id }, 'falha ao criar cobrança Pix');
+      throw new AppError(502, 'payment_gateway_error', 'Não foi possível gerar o Pix agora. Tente outra forma de pagamento.');
+    }
+  }
+  return { id: created.order.id as string, number: created.order.number as number, token: created.order.public_token as string, replayed: false };
+}
+
+function insertOrder(app: AppContext, tenant: TenantRow, input: OrderInput) {
+  return withTenant(app.db, tenant.id, async (tx) => {
     const settings = await getSettings(tx);
     if (!(await isOpenNow(tx, settings))) throw conflict('closed', 'A pizzaria está fechada no momento');
     const hasGateway = await gatewayEnabled(tx);
@@ -218,8 +254,8 @@ export async function createOrder(app: AppContext, tenant: TenantRow, input: Ord
     const { rows: orderRows } = await tx.query(
       `INSERT INTO orders (tenant_id, number, public_token, customer_id, customer_name, customer_phone, customer_email,
          fulfillment, address, delivery_zone_id, status, payment_method, change_for_cents, subtotal_cents,
-         delivery_fee_cents, discount_cents, total_cents, coupon_id, coupon_code, notes, eta_minutes, accepted_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+         delivery_fee_cents, discount_cents, total_cents, coupon_id, coupon_code, notes, eta_minutes, accepted_at, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
        RETURNING id, number, public_token, status, total_cents`,
       [
         tenant.id, number, token, cust[0].id, input.customer.name, phone, input.customer.email || null,
@@ -227,7 +263,7 @@ export async function createOrder(app: AppContext, tenant: TenantRow, input: Ord
         input.payment_method, input.payment_method === 'cash' ? input.change_for_cents ?? null : null,
         quote.subtotal_cents, quote.delivery_fee_cents, quote.discount_cents, quote.total_cents,
         quote.coupon?.id ?? null, quote.coupon?.code ?? null, input.notes, quote.eta_minutes,
-        status === 'accepted' ? new Date() : null,
+        status === 'accepted' ? new Date() : null, input.idempotency_key ?? null,
       ],
     );
     const order = orderRows[0];
@@ -247,17 +283,6 @@ export async function createOrder(app: AppContext, tenant: TenantRow, input: Ord
     if (!online) await notify(tx, { tenantId: tenant.id, orderId: order.id, type: 'order.created', status, number });
     return { order, settings };
   });
-
-  if (input.payment_method === 'pix_online') {
-    try {
-      await createPixCharge(app, tenant, created.order.id);
-    } catch (err) {
-      await cancelOrderInternal(app, tenant.id, created.order.id, 'Não foi possível gerar o Pix', 'failed');
-      app.log.error({ err, orderId: created.order.id }, 'falha ao criar cobrança Pix');
-      throw new AppError(502, 'payment_gateway_error', 'Não foi possível gerar o Pix agora. Tente outra forma de pagamento.');
-    }
-  }
-  return { id: created.order.id, number: created.order.number, token: created.order.public_token };
 }
 
 export async function getGatewayClient(app: AppContext, tx: Tx) {
