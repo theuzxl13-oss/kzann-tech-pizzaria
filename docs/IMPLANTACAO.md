@@ -20,7 +20,7 @@
    ```
 4. Acesse `https://pedidos.seudominio.com.br/admin/cadastro` e crie a primeira pizzaria (com o `SIGNUP_CODE`).
 
-O script `deploy/init-app-role.sh` cria o papel `kzann_app` (sem superuser e sem BYPASSRLS) na primeira inicialização do banco. As migrações rodam automaticamente no start com o papel dono.
+O script `deploy/init-app-role.sh` cria o papel `kzann_app` (sem superuser e sem BYPASSRLS) na primeira inicialização do banco. As migrações rodam no serviço `migrate`, que usa a credencial do dono do schema, executa e termina. O serviço `app` só sobe depois dele e **não recebe** a credencial do dono.
 
 ## Opção B: PaaS (Render, Railway, Fly.io) + PostgreSQL gerenciado (Neon, Supabase, RDS)
 
@@ -31,6 +31,7 @@ O script `deploy/init-app-role.sh` cria o papel `kzann_app` (sem superuser e sem
    ```
    > No Supabase, **não** use o papel `postgres` nem o `service_role` como `DATABASE_URL`, porque eles ignoram o RLS.
 2. Faça o deploy usando o `Dockerfile` ou com os comandos `npm ci && npm run build` (build) e `npm start` (start).
+   Configure as migrações como **comando de pré-deploy/release** (Render: *Pre-Deploy Command*; Railway/Fly: *release command*): `npm run migrate:prod -w server`, com `MIGRATION_DATABASE_URL` e `DB_APP_ROLE` definidos **somente nesse passo**. O processo da aplicação usa apenas `DATABASE_URL`. Em produção, ele não migra ao iniciar e avisa no log se encontrar `MIGRATION_DATABASE_URL`.
 3. Configure as variáveis de ambiente (tabela abaixo) e o health check em `/api/health`.
 4. **Uploads:** monte um volume persistente em `UPLOAD_DIR`. Em plataformas com disco efêmero, use um volume do provedor.
 5. Para **várias instâncias**, nada muda: sessões, contadores e tempo real ficam no PostgreSQL. O balanceador precisa suportar conexões SSE longas (desative o buffering).
@@ -43,10 +44,10 @@ O script `deploy/init-app-role.sh` cria o papel `kzann_app` (sem superuser e sem
 | `PORT` / `HOST` | | Padrão `3000` / `0.0.0.0` |
 | `PUBLIC_BASE_URL` | ✓ | URL pública (links, webhook, cookies `Secure`) |
 | `DATABASE_URL` | ✓ | Conexão do papel **da aplicação** (sem BYPASSRLS) |
-| `MIGRATION_DATABASE_URL` | | Conexão do papel dono, para as migrações |
+| `MIGRATION_DATABASE_URL` | só na migração | Conexão do papel dono. **Não** defina no processo da aplicação em produção |
 | `DB_APP_ROLE` | | Papel que recebe os GRANTs após as migrações |
 | `DB_SSL` | | `true` para exigir TLS no banco |
-| `MIGRATE_ON_START` | | `false` para rodar as migrações separadamente (`npm run migrate`) |
+| `MIGRATE_ON_START` | | Padrão: `true` em desenvolvimento e `false` em produção (migre com `npm run migrate:prod -w server`) |
 | `ENCRYPTION_KEY` | ✓ | 32 bytes em base64 (AES-256-GCM das credenciais de gateway) |
 | `SESSION_TTL_HOURS` | | Duração da sessão do painel (padrão 336 h) |
 | `SIGNUP_MODE` | | `open`, `code` (padrão) ou `closed` |

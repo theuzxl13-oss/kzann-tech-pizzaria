@@ -17,17 +17,30 @@ services:
       interval: 5s
       retries: 10
 
+  # KZ-10: migrações num container próprio, que roda e termina. Só ele recebe a credencial do dono do schema.
+  migrate:
+    build: .
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["node", "dist/migrate.js"]
+    environment:
+      MIGRATION_DATABASE_URL: postgres://kzann_owner:${POSTGRES_OWNER_PASSWORD:-troque-owner}@db:5432/kzann
+      DB_APP_ROLE: kzann_app
+
   app:
     build: .
     restart: unless-stopped
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     env_file: .env
     environment:
       DATABASE_URL: postgres://kzann_app:${KZANN_APP_PASSWORD:-troque-app}@db:5432/kzann
-      MIGRATION_DATABASE_URL: postgres://kzann_owner:${POSTGRES_OWNER_PASSWORD:-troque-owner}@db:5432/kzann
-      DB_APP_ROLE: kzann_app
+      # Garante que o app NÃO receba a credencial do dono mesmo que ela esteja no .env.
+      MIGRATION_DATABASE_URL: ""
+      MIGRATE_ON_START: "false"
       UPLOAD_DIR: /data/uploads
     volumes:
       - uploads:/data/uploads

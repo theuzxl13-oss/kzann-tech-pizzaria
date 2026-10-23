@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { test } from 'node:test';
+import { shouldMigrateOnStart } from '../src/config.js';
 import { isOpenAt } from '../src/domain/hours.js';
 import { canTransition, nextStatus } from '../src/domain/orderFlow.js';
 import { couponDiscount, priceItem, PricingError, type Catalog } from '../src/domain/pricing.js';
@@ -82,6 +83,13 @@ test('criptografia de segredos (AES-256-GCM)', () => {
   assert.equal(box.decrypt(enc), 'APP_USR-123');
   const tampered = enc.slice(0, -2) + (enc.endsWith('A') ? 'B' : 'A') + '=';
   assert.throws(() => box.decrypt(tampered));
+});
+
+test('KZ-10: produção não migra ao iniciar por padrão', () => {
+  assert.equal(shouldMigrateOnStart({ NODE_ENV: 'production' }, {}), false);
+  assert.equal(shouldMigrateOnStart({ NODE_ENV: 'development' }, {}), true);
+  assert.equal(shouldMigrateOnStart({ NODE_ENV: 'production' }, { MIGRATE_ON_START: 'true' }), true);
+  assert.equal(shouldMigrateOnStart({ NODE_ENV: 'development' }, { MIGRATE_ON_START: 'false' }), false);
 });
 
 test('assinatura do webhook do Mercado Pago', () => {

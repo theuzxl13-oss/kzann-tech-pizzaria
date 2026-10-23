@@ -8,6 +8,7 @@
     "dev": "tsx watch --env-file-if-exists=../.env src/index.ts",
     "db:dev": "tsx scripts/dev-db.ts",
     "migrate": "tsx --env-file-if-exists=../.env src/migrate.ts",
+    "migrate:prod": "node dist/migrate.js",
     "build": "tsc -p tsconfig.build.json && node scripts/copy-sql.mjs",
     "start": "node --env-file-if-exists=../.env dist/index.js",
     "test": "tsx --test --test-concurrency=1 test/*.test.ts",

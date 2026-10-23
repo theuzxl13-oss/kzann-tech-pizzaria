@@ -32,6 +32,14 @@ const schema = z.object({
 
 export type Config = z.infer<typeof schema>;
 
+/** Migrar ao iniciar: padrão sim em desenvolvimento/teste e não em produção; MIGRATE_ON_START=true|false força. */
+export function shouldMigrateOnStart(cfg: Pick<Config, 'NODE_ENV'>, env: NodeJS.ProcessEnv): boolean {
+  const flag = env.MIGRATE_ON_START;
+  if (flag === 'true' || flag === '1') return true;
+  if (flag === 'false' || flag === '0') return false;
+  return cfg.NODE_ENV !== 'production';
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = schema.safeParse(env);
   if (!parsed.success) {
