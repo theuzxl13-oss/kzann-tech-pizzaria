@@ -414,6 +414,38 @@ describe('KZ-06: cancelamento de pedido já pago', () => {
   });
 });
 
+describe('KZ-03: limites de pedidos', () => {
+  test('vários clientes no mesmo IP não se bloqueiam; o mesmo telefone repetindo é limitado', async () => {
+    const sharedIp = '100.64.0.10'; // faixa típica de CGNAT de operadora
+    for (let i = 0; i < 12; i++) {
+      const c = new Client(app, sharedIp);
+      expectOk(await c.post('/api/public/bella/orders', {
+        items: [pizzaItem()], fulfillment: 'pickup', customer: { name: `Cliente CGNAT ${i}`, phone: `119500000${String(i).padStart(2, '0')}` }, payment_method: 'cash',
+      }), 201);
+    }
+    const same = new Client(app, '100.64.0.11');
+    const statuses: number[] = [];
+    for (let i = 0; i < 7; i++) {
+      statuses.push((await same.post('/api/public/bella/orders', {
+        items: [pizzaItem()], fulfillment: 'pickup', customer: { name: 'Repetidor', phone: '11940000000' }, payment_method: 'cash',
+      })).status);
+    }
+    assert.deepEqual(statuses, [201, 201, 201, 201, 201, 201, 429]);
+  });
+
+  test('teto por IP barra abuso trocando de telefone', async () => {
+    const ip = '198.51.100.7';
+    let last = 0;
+    for (let i = 0; i < 61; i++) {
+      last = (await new Client(app, ip).post('/api/public/bella/orders', {
+        items: [pizzaItem()], fulfillment: 'pickup', customer: { name: `Abuso ${i}`, phone: `119600000${String(i).padStart(2, '0')}` }, payment_method: 'cash',
+      })).status;
+      if (i < 60) assert.equal(last, 201, `pedido ${i}`);
+    }
+    assert.equal(last, 429);
+  });
+});
+
 describe('KZ-04: idempotência do pedido', () => {
   test('mesma chave enviada em paralelo e repetida gera um único pedido', async () => {
     const body = {

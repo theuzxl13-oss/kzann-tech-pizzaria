@@ -1,9 +1,9 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { withTenant } from '../db.js';
 import { PAYMENT_LABELS, type PaymentMethod } from '../domain/orderFlow.js';
-import { notFound } from '../lib/errors.js';
+import { AppError, notFound } from '../lib/errors.js';
 import { loadPublicMenu } from '../services/catalog.js';
 import { buildQuote, createOrder, getPublicOrder, orderSchema, quoteSchema } from '../services/orders.js';
 import { findTenantBySlug, gatewayEnabled, getHours, getSettings } from '../services/tenants.js';
@@ -76,7 +76,22 @@ export async function publicRoutes(f: FastifyInstance, app: AppContext) {
     return withTenant(app.db, tenant.id, async (tx) => buildQuote(tx, await getSettings(tx), body, { strictCoupon: false }));
   });
 
-  f.post('/api/public/:slug/orders', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (req, reply) => {
+  // KZ-03: o limite só por IP bloqueava clientes legítimos que compartilham IP (operadora móvel/CGNAT,
+  // ou todos os clientes quando o proxy não está configurado). Agora há dois limites:
+  // - por IP + telefone (protege contra repetição do mesmo cliente);
+  // - teto por IP bem mais alto (protege contra abuso trocando de telefone).
+  // createRateLimit (e não rateLimit) porque o plugin ignora um segundo limitador na mesma requisição.
+  const orderLimitPerIp = f.createRateLimit({ max: 60, timeWindow: '10 minutes', keyGenerator: (req) => `orders-ip:${req.ip}` });
+  const phoneOf = (req: FastifyRequest) => String((req.body as any)?.customer?.phone ?? '').replace(/\D/g, '').slice(0, 15);
+  f.post('/api/public/:slug/orders', {
+    onRequest: async (req) => {
+      const r = await orderLimitPerIp(req);
+      if (!r.isAllowed && r.isExceeded) throw new AppError(429, 'rate_limited', 'Muitos pedidos a partir desta conexão. Aguarde alguns minutos.');
+    },
+    config: {
+      rateLimit: { max: 6, timeWindow: '10 minutes', hook: 'preHandler', keyGenerator: (req: FastifyRequest) => `orders-phone:${req.ip}:${phoneOf(req)}` },
+    },
+  }, async (req, reply) => {
     const { slug } = slugParam.parse(req.params);
     const body = orderSchema.parse(req.body);
     const tenant = await findTenantBySlug(app.db, slug);

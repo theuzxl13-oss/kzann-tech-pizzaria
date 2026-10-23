@@ -37,6 +37,11 @@ export async function buildApp(cfg: Config, opts: BuildOptions = {}): Promise<{ 
     bodyLimit: 512 * 1024,
   });
 
+  if (cfg.NODE_ENV === 'production' && !cfg.TRUST_PROXY) {
+    // KZ-03: atrás de proxy sem TRUST_PROXY, todos os clientes parecem ter o mesmo IP e dividem os limites de pedidos.
+    f.log.warn('TRUST_PROXY=false em produção: se houver proxy/balanceador na frente, os limites por IP valerão para TODOS os clientes juntos. Defina TRUST_PROXY=true.');
+  }
+
   const db = createPool(cfg.DATABASE_URL, cfg.DB_SSL);
   const hub = new RealtimeHub(cfg.DATABASE_URL, cfg.DB_SSL, opts.ssePingMs);
   await hub.start();
