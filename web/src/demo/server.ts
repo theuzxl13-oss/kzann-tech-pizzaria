@@ -421,6 +421,8 @@ on('POST', '/api/auth/change-password', async ({ db, body }) => {
   a.user.must_change_password = false;
   return { ok: true };
 });
+on('POST', '/api/auth/forgot-password', () => ({ ok: true }));
+on('POST', '/api/auth/reset-password', () => fail(400, 'invalid_token', 'Na demonstração não há envio de e-mail, então não existem links de redefinição.'));
 on('POST', '/api/auth/signup', async ({ db, body }) => {
   if (!/^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/.test(body.slug ?? '')) fail(400, 'validation', 'Endereço do cardápio inválido');
   if (String(body.password).length < 8) fail(400, 'validation', 'A senha deve ter pelo menos 8 caracteres');

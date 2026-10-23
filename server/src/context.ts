@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { Config } from './config.js';
 import type { Db } from './db.js';
 import type { SecretBox } from './lib/crypto.js';
+import type { Mailer } from './lib/mailer.js';
 import type { FetchLike } from './payments/mercadopago.js';
 import type { RealtimeHub } from './realtime.js';
 
@@ -12,5 +13,7 @@ export interface AppContext {
   hub: RealtimeHub;
   secrets: SecretBox;
   fetchImpl: FetchLike;
+  /** null quando não há SMTP configurado em produção. */
+  mailer: Mailer | null;
   log: FastifyBaseLogger;
 }

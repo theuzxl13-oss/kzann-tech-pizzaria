@@ -41,11 +41,12 @@ const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
 }) as typeof fetch;
 
 const owner = { a: null as unknown as Client, b: null as unknown as Client };
+const sentMail: { to: string; subject: string; text: string }[] = [];
 const ids: Record<string, string> = {};
 
 before(async () => {
   db = await startTestDb();
-  ({ app } = await startTestApp(db.appUrl, fakeFetch, { ssePingMs: 300 }));
+  ({ app } = await startTestApp(db.appUrl, fakeFetch, { ssePingMs: 300, mailer: { send: async (m) => void sentMail.push(m) } }));
   owner.a = new Client(app);
   owner.b = new Client(app);
 });
@@ -411,6 +412,53 @@ describe('KZ-06: cancelamento de pedido já pago', () => {
     assert.equal(cash.expected_cash_cents, 1000);
     assert.equal((await a.post(`/api/admin/orders/${o.id}/confirm-refund`)).status, 409);
     expectOk(await a.post('/api/admin/cash/close', { counted_cents: 1000 }));
+  });
+});
+
+describe('KZ-02: recuperação de senha', () => {
+  const tokenFrom = (text: string) => decodeURIComponent(text.match(/token=([^\s]+)/)![1]);
+
+  test('e-mail desconhecido recebe a mesma resposta e nenhum envio', async () => {
+    const before = sentMail.length;
+    const r = expectOk(await new Client(app).post('/api/auth/forgot-password', { email: 'ninguem@x.test' }));
+    assert.deepEqual(r, { ok: true });
+    await new Promise((res) => setTimeout(res, 50));
+    assert.equal(sentMail.length, before);
+  });
+
+  test('link redefine a senha, derruba sessões antigas e só funciona uma vez', async () => {
+    const old = new Client(app);
+    expectOk(await old.post('/api/auth/login', { email: 'ze@forno.test', password: 'outraSenha9' }));
+    expectOk(await new Client(app).post('/api/auth/forgot-password', { email: 'ZE@forno.test' }));
+    await new Promise((res) => setTimeout(res, 50));
+    const mail = sentMail.at(-1)!;
+    assert.equal(mail.to, 'ze@forno.test');
+    assert.match(mail.text, /https:\/\/pedidos\.example\.test\/admin\/redefinir-senha\?token=/);
+    const token = tokenFrom(mail.text);
+
+    assert.equal((await new Client(app).post('/api/auth/reset-password', { token, new_password: 'curta' })).status, 400);
+    expectOk(await new Client(app).post('/api/auth/reset-password', { token, new_password: 'novaSenhaZe7' }));
+    assert.equal((await old.get('/api/auth/me')).status, 401);
+    assert.equal((await new Client(app).post('/api/auth/login', { email: 'ze@forno.test', password: 'outraSenha9' })).status, 401);
+    expectOk(await new Client(app).post('/api/auth/login', { email: 'ze@forno.test', password: 'novaSenhaZe7' }));
+    const reuse = await new Client(app).post('/api/auth/reset-password', { token, new_password: 'outraVez123' });
+    assert.equal(reuse.body.error.code, 'invalid_token');
+  });
+
+  test('novo pedido de link invalida o anterior; link vencido é recusado', async () => {
+    await new Client(app).post('/api/auth/forgot-password', { email: 'ze@forno.test' });
+    await new Promise((res) => setTimeout(res, 50));
+    const first = tokenFrom(sentMail.at(-1)!.text);
+    await new Client(app).post('/api/auth/forgot-password', { email: 'ze@forno.test' });
+    await new Promise((res) => setTimeout(res, 50));
+    const second = tokenFrom(sentMail.at(-1)!.text);
+    assert.equal((await new Client(app).post('/api/auth/reset-password', { token: first, new_password: 'novaSenhaZe8' })).status, 400);
+
+    const c = new pg.Client({ connectionString: db.adminUrl });
+    await c.connect();
+    await c.query("UPDATE password_resets SET expires_at = now() - interval '1 minute' WHERE used_at IS NULL");
+    await c.end();
+    assert.equal((await new Client(app).post('/api/auth/reset-password', { token: second, new_password: 'novaSenhaZe8' })).status, 400);
   });
 });
 

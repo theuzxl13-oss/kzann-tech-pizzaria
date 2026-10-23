@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
 import { AdminLayout, RequirePerm } from './admin/AdminLayout';
-import { ChangePasswordPage, LoginPage, SignupPage, TenantPicker } from './admin/AuthPages';
+import { ChangePasswordPage, ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupPage, TenantPicker } from './admin/AuthPages';
 import { CashPage } from './admin/CashPage';
 import { CouponsPage, ZonesPage } from './admin/CouponsZones';
 import { HistoryPage, SharePage } from './admin/HistoryShare';
@@ -117,6 +117,8 @@ function App() {
             <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/admin/cadastro" element={<SignupPage />} />
             <Route path="/admin/senha" element={<ChangePasswordPage />} />
+            <Route path="/admin/esqueci-senha" element={<ForgotPasswordPage />} />
+            <Route path="/admin/redefinir-senha" element={<ResetPasswordPage />} />
             <Route path="/admin/lojas" element={<TenantPicker />} />
             <Route path="/admin" element={<AdminRoot />}>
               <Route index element={<RequirePerm perm="orders.view"><OrdersBoard /></RequirePerm>} />

@@ -13,6 +13,7 @@
 - Sessão com token aleatório de 256 bits em cookie `httpOnly`, `SameSite=Lax`, `Secure` em HTTPS. No banco fica só o **hash SHA-256** do token, e as sessões podem ser revogadas.
 - Trocar a senha encerra as demais sessões. Desativar um funcionário encerra as sessões dele.
 - Funcionários recebem senha temporária, exibida uma única vez, com troca obrigatória no primeiro acesso.
+- **Recuperação de senha por e-mail:** a resposta é sempre a mesma, exista ou não a conta, e o envio é assíncrono. O link é de uso único e vale 30 minutos. No banco fica só o hash SHA-256 do token. Pedir um novo link invalida o anterior. Redefinir a senha encerra **todas** as sessões. Limite de 5 pedidos a cada 15 minutos por IP.
 
 ## CSRF, XSS e cabeçalhos
 - Toda requisição que altera estado em `/api/auth` e `/api/admin` exige o cabeçalho `x-kzann-csrf: 1`. Como o servidor não habilita CORS, outro site não consegue enviá-lo. Isso vale junto com o `SameSite=Lax`.

@@ -57,6 +57,8 @@ O script `deploy/init-app-role.sh` cria o papel `kzann_app` (sem superuser e sem
 | `TRUST_PROXY` | | `true` atrás de proxy/balanceador |
 | `MERCADOPAGO_API_URL` | | Padrão `https://api.mercadopago.com` |
 | `PIX_EXPIRATION_MINUTES` | | Validade do QR Code Pix (padrão 30) |
+| `SMTP_URL` | recomendado | SMTP para "Esqueci minha senha" (ex.: `smtps://usuario:senha@smtp.provedor.com:465`) |
+| `MAIL_FROM` | | Remetente dos e-mails (domínio verificado no provedor) |
 
 ## Demonstração no GitHub Pages
 

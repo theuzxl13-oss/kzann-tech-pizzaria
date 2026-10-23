@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import type { AppContext } from '../src/context.js';
+import type { Mailer } from '../src/lib/mailer.js';
 import { migrate } from '../src/migrate.js';
 import type { FetchLike } from '../src/payments/mercadopago.js';
 
@@ -46,7 +47,7 @@ export async function startTestDb() {
 export async function startTestApp(
   appUrl: string,
   fetchImpl?: FetchLike,
-  opts: { ssePingMs?: number } = {},
+  opts: { ssePingMs?: number; mailer?: Mailer | null } = {},
 ): Promise<{ app: FastifyInstance; ctx: AppContext }> {
   const cfg = loadConfig({
     NODE_ENV: 'test',
@@ -57,7 +58,7 @@ export async function startTestApp(
     UPLOAD_DIR: mkdtempSync(path.join(tmpdir(), 'kzann-up-')),
     WEB_DIST_DIR: path.join(tmpdir(), 'nao-existe'),
   } as NodeJS.ProcessEnv);
-  return buildApp(cfg, { fetchImpl, logger: false, ssePingMs: opts.ssePingMs });
+  return buildApp(cfg, { fetchImpl, logger: false, ssePingMs: opts.ssePingMs, mailer: opts.mailer });
 }
 
 let nextIp = 1;

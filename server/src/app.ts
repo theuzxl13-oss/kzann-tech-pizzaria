@@ -14,6 +14,7 @@ import type { AppContext } from './context.js';
 import { createPool } from './db.js';
 import { SecretBox } from './lib/crypto.js';
 import { AppError } from './lib/errors.js';
+import { createMailer, type Mailer } from './lib/mailer.js';
 import type { FetchLike } from './payments/mercadopago.js';
 import { RealtimeHub } from './realtime.js';
 import { menuRoutes } from './routes/admin/menu.js';
@@ -28,6 +29,8 @@ export interface BuildOptions {
   fetchImpl?: FetchLike;
   logger?: boolean;
   ssePingMs?: number;
+  /** Substitui o envio de e-mail (testes). */
+  mailer?: Mailer | null;
 }
 
 export async function buildApp(cfg: Config, opts: BuildOptions = {}): Promise<{ app: FastifyInstance; ctx: AppContext }> {
@@ -51,8 +54,10 @@ export async function buildApp(cfg: Config, opts: BuildOptions = {}): Promise<{ 
     hub,
     secrets: new SecretBox(cfg.ENCRYPTION_KEY),
     fetchImpl: opts.fetchImpl ?? fetch,
+    mailer: opts.mailer !== undefined ? opts.mailer : createMailer(cfg, f.log),
     log: f.log,
   };
+  if (!ctx.mailer) f.log.warn('SMTP_URL não configurada: a recuperação de senha por e-mail está indisponível.');
 
   await f.register(helmet, {
     contentSecurityPolicy: {

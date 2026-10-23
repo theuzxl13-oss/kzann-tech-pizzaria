@@ -50,6 +50,9 @@ export function LoginPage() {
         </Field>
         <button className="btn primary lg" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
         <p className="small center muted">
+          <Link to="/admin/esqueci-senha">Esqueci minha senha</Link>
+        </p>
+        <p className="small center muted">
           Nova pizzaria? <Link to="/admin/cadastro">Cadastre-se</Link>
         </p>
       </form>
@@ -163,6 +166,99 @@ export function ChangePasswordPage({ forced }: { forced?: boolean }) {
           <input className="input" type="password" required minLength={8} value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
         </Field>
         <button className="btn primary lg" disabled={busy}>Salvar</button>
+      </form>
+    </div>
+  );
+}
+
+export function ForgotPasswordPage() {
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const toast = useToast();
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await post('/api/auth/forgot-password', { email });
+      setSent(true);
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="auth-page">
+      <form className="card auth-card stack" onSubmit={submit}>
+        <Brand />
+        <h1 style={{ fontSize: 22 }}>Recuperar acesso</h1>
+        {sent ? (
+          <div className="alert ok">
+            Se existir uma conta com <b>{email}</b>, você receberá em instantes um e-mail com o link para criar uma nova senha. O link vale por 30 minutos.
+            {IS_DEMO && <div style={{ marginTop: 6 }}>Na demonstração nenhum e-mail é enviado.</div>}
+          </div>
+        ) : (
+          <>
+            <p className="muted small">Informe o e-mail usado para entrar no painel. Enviaremos um link para criar uma nova senha.</p>
+            <Field label="E-mail">
+              <input className="input" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            </Field>
+            <button className="btn primary lg" disabled={busy}>{busy ? 'Enviando…' : 'Enviar link'}</button>
+          </>
+        )}
+        <p className="small center muted">
+          <Link to="/admin/login">Voltar para o login</Link>
+        </p>
+        <p className="tiny center muted">Funcionário? Seu gestor também pode gerar uma senha temporária em Equipe.</p>
+      </form>
+    </div>
+  );
+}
+
+export function ResetPasswordPage() {
+  const token = new URLSearchParams(location.search).get('token') ?? '';
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const navigate = useNavigate();
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (password !== confirm) {
+      toast('As senhas não coincidem', 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      await post('/api/auth/reset-password', { token, new_password: password });
+      toast('Senha redefinida. Entre com a nova senha.', 'ok');
+      navigate('/admin/login', { replace: true });
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="auth-page">
+      <form className="card auth-card stack" onSubmit={submit}>
+        <Brand />
+        <h1 style={{ fontSize: 22 }}>Criar nova senha</h1>
+        {!token ? (
+          <div className="alert danger">Link incompleto. <Link to="/admin/esqueci-senha">Peça um novo link</Link>.</div>
+        ) : (
+          <>
+            <Field label="Nova senha" hint="Mínimo 8 caracteres, com letras e números.">
+              <input className="input" type="password" required minLength={8} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </Field>
+            <Field label="Repita a nova senha">
+              <input className="input" type="password" required minLength={8} autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            </Field>
+            <button className="btn primary lg" disabled={busy}>Salvar nova senha</button>
+            <p className="tiny muted center">Por segurança, todos os dispositivos conectados à sua conta serão desconectados.</p>
+          </>
+        )}
       </form>
     </div>
   );

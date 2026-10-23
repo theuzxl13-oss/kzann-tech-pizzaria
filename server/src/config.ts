@@ -28,6 +28,9 @@ const schema = z.object({
   TRUST_PROXY: bool.default(false),
   MERCADOPAGO_API_URL: z.string().url().default('https://api.mercadopago.com'),
   PIX_EXPIRATION_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
+  /** SMTP para e-mails transacionais (recuperação de senha). Ex.: smtps://usuario:senha@smtp.provedor.com:465 */
+  SMTP_URL: z.string().url().optional().or(z.literal('').transform(() => undefined)),
+  MAIL_FROM: z.string().default('Kzann Tech <nao-responda@kzann.tech>'),
 });
 
 export type Config = z.infer<typeof schema>;

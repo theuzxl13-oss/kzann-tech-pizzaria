@@ -6,12 +6,13 @@ import {
   destroySession,
   getDummyHash,
   hashPassword,
+  SESSION_COOKIE,
   verifyPassword,
 } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { withTx } from '../db.js';
-import { safeEqual } from '../lib/crypto.js';
-import { badRequest, conflict, forbidden, unauthorized } from '../lib/errors.js';
+import { randomToken, safeEqual, sha256 } from '../lib/crypto.js';
+import { AppError, badRequest, conflict, forbidden, unauthorized } from '../lib/errors.js';
 import { ROLE_LABELS } from '../lib/permissions.js';
 
 export const passwordSchema = z
@@ -137,6 +138,66 @@ export async function authRoutes(f: FastifyInstance, app: AppContext) {
     const tenants = await listMemberships(app, a.userId);
     if (!tenants.some((t) => t.id === tenant_id)) throw forbidden('Você não faz parte desta pizzaria');
     await app.db.query('UPDATE sessions SET tenant_id = $2 WHERE id = $1', [a.sessionId, tenant_id]);
+    return { ok: true };
+  });
+
+  // ───────── KZ-02: recuperação de senha por e-mail ─────────
+  const resetRateLimit = { rateLimit: { max: 5, timeWindow: '15 minutes' } };
+
+  /** Sempre responde igual (não revela se o e-mail existe). O envio não é aguardado, para o tempo de resposta não vazar isso. */
+  f.post('/api/auth/forgot-password', { config: resetRateLimit }, async (req) => {
+    const { email } = z.object({ email: z.string().trim().toLowerCase().email() }).parse(req.body);
+    if (!app.mailer) throw new AppError(503, 'email_unavailable', 'Recuperação de senha indisponível. Fale com o suporte da Kzann Tech.');
+    const { rows } = await app.db.query('SELECT id, name FROM users WHERE lower(email) = $1 AND active', [email]);
+    const user = rows[0];
+    if (user) {
+      const token = randomToken(32);
+      // Um link válido por vez: invalida pedidos anteriores ainda não usados.
+      await app.db.query('UPDATE password_resets SET used_at = now() WHERE user_id = $1 AND used_at IS NULL', [user.id]);
+      await app.db.query(
+        "INSERT INTO password_resets (user_id, token_hash, expires_at, ip) VALUES ($1, $2, now() + interval '30 minutes', $3)",
+        [user.id, sha256(token), req.ip],
+      );
+      const link = `${app.cfg.PUBLIC_BASE_URL}/admin/redefinir-senha?token=${encodeURIComponent(token)}`;
+      app.mailer
+        .send({
+          to: email,
+          subject: 'Kzann Tech — redefinição de senha',
+          text: [
+            `Olá, ${user.name}!`,
+            '',
+            'Recebemos um pedido para redefinir a senha do seu acesso ao painel Kzann Tech.',
+            `Para criar uma nova senha, abra o link abaixo (válido por 30 minutos, uso único):`,
+            link,
+            '',
+            'Se não foi você, ignore este e-mail: sua senha atual continua valendo.',
+          ].join('\n'),
+        })
+        .catch((err) => app.log.error({ err }, 'falha ao enviar e-mail de redefinição'));
+    }
+    return { ok: true };
+  });
+
+  f.post('/api/auth/reset-password', { config: resetRateLimit }, async (req, reply) => {
+    const body = z.object({ token: z.string().min(20).max(100), new_password: passwordSchema }).parse(req.body);
+    const passwordHash = await hashPassword(body.new_password);
+    const userId = await withTx(app.db, {}, async (tx) => {
+      const { rows } = await tx.query(
+        `SELECT pr.id, pr.user_id FROM password_resets pr JOIN users u ON u.id = pr.user_id
+          WHERE pr.token_hash = $1 AND pr.used_at IS NULL AND pr.expires_at > now() AND u.active
+          FOR UPDATE OF pr`,
+        [sha256(body.token)],
+      );
+      const r = rows[0];
+      if (!r) throw badRequest('invalid_token', 'Link inválido ou expirado. Peça um novo.');
+      await tx.query('UPDATE password_resets SET used_at = now() WHERE id = $1', [r.id]);
+      await tx.query('UPDATE users SET password_hash = $2, must_change_password = false, updated_at = now() WHERE id = $1', [r.user_id, passwordHash]);
+      // Encerra todas as sessões abertas: quem tinha a senha antiga perde o acesso.
+      await tx.query('DELETE FROM sessions WHERE user_id = $1', [r.user_id]);
+      return r.user_id as string;
+    });
+    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    app.log.info({ userId }, 'senha redefinida por e-mail');
     return { ok: true };
   });
 
