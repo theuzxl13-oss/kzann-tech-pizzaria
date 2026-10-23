@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-demo/
+server/dist/
+server/.pgdata/
+server/uploads/
+uploads/
+.env
+*.log
+.DS_Store

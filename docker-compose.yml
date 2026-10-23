@@ -1,0 +1,39 @@
+# Ambiente completo (PostgreSQL + aplicação) para homologação ou servidor próprio.
+# Uso: cp .env.example .env  (preencha ENCRYPTION_KEY, SIGNUP_CODE e senhas) && docker compose up -d --build
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kzann
+      POSTGRES_USER: kzann_owner
+      POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD:-troque-owner}
+      KZANN_APP_PASSWORD: ${KZANN_APP_PASSWORD:-troque-app}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/init-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kzann_owner -d kzann"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://kzann_app:${KZANN_APP_PASSWORD:-troque-app}@db:5432/kzann
+      MIGRATION_DATABASE_URL: postgres://kzann_owner:${POSTGRES_OWNER_PASSWORD:-troque-owner}@db:5432/kzann
+      DB_APP_ROLE: kzann_app
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+  uploads:
