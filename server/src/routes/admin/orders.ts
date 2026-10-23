@@ -51,17 +51,25 @@ export async function orderRoutes(f: FastifyInstance, app: AppContext) {
         const statuses = q.status.split(',').filter((x) => (ORDER_STATUSES as readonly string[]).includes(x));
         if (statuses.length) add('status = ANY(?)', statuses);
       }
-      params.push(s.timezone);
-      const tz = `$${params.length}`;
-      if (q.from) add(`(created_at AT TIME ZONE ${tz})::date >= ?::date`, q.from);
-      if (q.to) add(`(created_at AT TIME ZONE ${tz})::date <= ?::date`, q.to);
+      // KZ-24: o fuso só entra nos parâmetros quando há filtro de data (parâmetro sem uso quebrava a consulta).
+      if (q.from || q.to) {
+        params.push(s.timezone);
+        const tz = `$${params.length}`;
+        if (q.from) add(`(created_at AT TIME ZONE ${tz})::date >= ?::date`, q.from);
+        if (q.to) add(`(created_at AT TIME ZONE ${tz})::date <= ?::date`, q.to);
+      }
       if (q.q) {
         const digits = q.q.replace(/\D/g, '');
         if (/^#?\d{1,7}$/.test(q.q)) add('number = ?', Number(digits));
         else {
           params.push(`%${q.q}%`);
           const p = `$${params.length}`;
-          where.push(digits.length >= 4 ? `(customer_name ILIKE ${p} OR customer_phone LIKE '%${digits}%')` : `customer_name ILIKE ${p}`);
+          if (digits.length >= 4) {
+            params.push(`%${digits}%`);
+            where.push(`(customer_name ILIKE ${p} OR customer_phone LIKE $${params.length})`);
+          } else {
+            where.push(`customer_name ILIKE ${p}`);
+          }
         }
       }
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
