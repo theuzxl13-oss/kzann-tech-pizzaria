@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { PageLoading, useLoad, useToast } from '../components/ui';
 import { brl, dateTime, formatPhone, get, whatsappLink } from '../lib/api';
@@ -26,6 +26,13 @@ export function OrderPage() {
   const [copied, setCopied] = useState(false);
 
   useEventStream(`/api/public/${slug}/orders/${token}/events`, () => reload());
+  // Reserva caso o tempo real falhe: recarrega enquanto o pedido estiver em andamento.
+  const active = order && !['completed', 'cancelled'].includes(order.status);
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(() => document.visibilityState === 'visible' && reload(), 30_000);
+    return () => clearInterval(t);
+  }, [active, reload]);
 
   if (error) return <StoreError error={error} />;
   if (!order || !store.data) return <PageLoading />;

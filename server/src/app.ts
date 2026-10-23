@@ -27,6 +27,7 @@ import { webhookRoutes } from './routes/webhooks.js';
 export interface BuildOptions {
   fetchImpl?: FetchLike;
   logger?: boolean;
+  ssePingMs?: number;
 }
 
 export async function buildApp(cfg: Config, opts: BuildOptions = {}): Promise<{ app: FastifyInstance; ctx: AppContext }> {
@@ -37,7 +38,7 @@ export async function buildApp(cfg: Config, opts: BuildOptions = {}): Promise<{ 
   });
 
   const db = createPool(cfg.DATABASE_URL, cfg.DB_SSL);
-  const hub = new RealtimeHub(cfg.DATABASE_URL, cfg.DB_SSL);
+  const hub = new RealtimeHub(cfg.DATABASE_URL, cfg.DB_SSL, opts.ssePingMs);
   await hub.start();
   const ctx: AppContext = {
     cfg,

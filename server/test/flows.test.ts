@@ -45,7 +45,7 @@ const ids: Record<string, string> = {};
 
 before(async () => {
   db = await startTestDb();
-  ({ app } = await startTestApp(db.appUrl, fakeFetch));
+  ({ app } = await startTestApp(db.appUrl, fakeFetch, { ssePingMs: 300 }));
   owner.a = new Client(app);
   owner.b = new Client(app);
 });
@@ -388,6 +388,22 @@ describe('tempo real (SSE)', () => {
     }), 201);
     await waitFor(`"orderId":"${o.id}"`);
     assert.match(buffer, /event: order\.created/);
+    ctrl.abort();
+  });
+
+  // KZ-01: o navegador só detecta conexão morta se receber um evento nomeado periodicamente.
+  test('stream envia evento "ping" nomeado para vigilância do cliente', async () => {
+    const address = app.server.listening ? `http://127.0.0.1:${(app.server.address() as any).port}` : await app.listen({ port: 0, host: '127.0.0.1' });
+    const ctrl = new AbortController();
+    const res = await fetch(`${address}/api/admin/events`, { headers: { cookie: owner.a.cookie }, signal: ctrl.signal });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const deadline = Date.now() + 3000;
+    while (!buffer.includes('event: ping')) {
+      if (Date.now() > deadline) throw new Error(`sem ping; recebido: ${buffer}`);
+      buffer += decoder.decode((await reader.read()).value);
+    }
     ctrl.abort();
   });
 });

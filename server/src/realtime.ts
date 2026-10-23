@@ -30,6 +30,8 @@ export class RealtimeHub extends EventEmitter {
   constructor(
     private connectionString: string,
     private ssl = false,
+    /** Intervalo do evento "ping" usado pelo cliente para detectar conexão morta. */
+    private pingMs = 25_000,
   ) {
     super();
     this.setMaxListeners(0);
@@ -97,7 +99,8 @@ export class RealtimeHub extends EventEmitter {
     const onReconnect = () => send('resync', {});
     this.on('event', onEvent);
     this.on('reconnected', onReconnect);
-    const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+    // Evento nomeado (não comentário) para o navegador conseguir observar e reconectar se parar de chegar.
+    const ping = setInterval(() => send('ping', {}), this.pingMs);
     req.raw.on('close', () => {
       clearInterval(ping);
       this.off('event', onEvent);

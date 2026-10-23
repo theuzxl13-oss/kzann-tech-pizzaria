@@ -43,7 +43,11 @@ export async function startTestDb() {
   };
 }
 
-export async function startTestApp(appUrl: string, fetchImpl?: FetchLike): Promise<{ app: FastifyInstance; ctx: AppContext }> {
+export async function startTestApp(
+  appUrl: string,
+  fetchImpl?: FetchLike,
+  opts: { ssePingMs?: number } = {},
+): Promise<{ app: FastifyInstance; ctx: AppContext }> {
   const cfg = loadConfig({
     NODE_ENV: 'test',
     DATABASE_URL: appUrl,
@@ -53,7 +57,7 @@ export async function startTestApp(appUrl: string, fetchImpl?: FetchLike): Promi
     UPLOAD_DIR: mkdtempSync(path.join(tmpdir(), 'kzann-up-')),
     WEB_DIST_DIR: path.join(tmpdir(), 'nao-existe'),
   } as NodeJS.ProcessEnv);
-  return buildApp(cfg, { fetchImpl, logger: false });
+  return buildApp(cfg, { fetchImpl, logger: false, ssePingMs: opts.ssePingMs });
 }
 
 /** Cliente HTTP simples que mantém o cookie de sessão (como um navegador). */

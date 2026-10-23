@@ -31,11 +31,14 @@ export function OrdersBoard() {
       }),
     [subscribe, reload],
   );
-  // Atualiza o "há X min" e repete o alerta enquanto houver pedido novo sem aceitar.
+  // Atualiza o "há X min" e recarrega o quadro a cada 30 s como reserva caso o tempo real falhe.
   useEffect(() => {
-    const t = setInterval(() => tick((x) => x + 1), 30_000);
+    const t = setInterval(() => {
+      tick((x) => x + 1);
+      if (document.visibilityState === 'visible') reload();
+    }, 30_000);
     return () => clearInterval(t);
-  }, []);
+  }, [reload]);
   const pending = (data ?? []).filter((o) => o.status === 'pending');
   useEffect(() => setPendingCount(pending.length), [pending.length, setPendingCount]);
   useEffect(() => {
