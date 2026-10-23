@@ -150,11 +150,28 @@ function SummaryCards({ sum }: { sum: any }) {
         ))}
         <div className="summary-line total"><span>Total recebido</span><span>{brl(sum.total_received_cents)}</span></div>
         {sum.cancelled.orders > 0 && <p className="small muted">{sum.cancelled.orders} cancelado(s) · {brl(sum.cancelled.total_cents)}</p>}
+        {(sum.refunds ?? []).length > 0 && (
+          <div className="stack tight">
+            <hr className="divider" />
+            <div className="small bold">Cancelados após pagamento</div>
+            {sum.refunds.map((r: any) => (
+              <div key={r.id} className="small row between">
+                <span>#{r.number} · {PAYMENT_LABELS[r.payment_method as keyof typeof PAYMENT_LABELS]}</span>
+                <span className={r.payment_status === 'refund_pending' ? 'bold' : 'muted'} style={r.payment_status === 'refund_pending' ? { color: 'var(--danger)' } : undefined}>
+                  {brl(r.total_cents)} · {r.payment_status === 'refund_pending' ? 'a devolver' : 'devolvido'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="card stack tight">
         <h3 className="section-title" style={{ margin: 0 }}>Gaveta (dinheiro)</h3>
         <div className="summary-line"><span>Suprimentos</span><span>+ {brl(sum.supplies_cents)}</span></div>
         <div className="summary-line"><span>Sangrias</span><span>− {brl(sum.withdrawals_cents)}</span></div>
+        {sum.cash_to_return_cents > 0 && (
+          <div className="summary-line" style={{ color: 'var(--danger)' }}><span>Dinheiro a devolver (incluso)</span><span>{brl(sum.cash_to_return_cents)}</span></div>
+        )}
         <div className="summary-line total"><span>Esperado na gaveta</span><span>{brl(sum.expected_cash_cents)}</span></div>
         {sum.movements.map((m: any) => (
           <div key={m.id} className="small muted row between">

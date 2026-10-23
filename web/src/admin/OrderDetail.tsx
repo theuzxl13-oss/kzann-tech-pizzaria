@@ -175,7 +175,20 @@ export function OrderDetail({ id, onClose, onChanged }: { id: string; onClose: (
       {status === 'awaiting_payment' && (
         <div className="alert small">Aguardando confirmação do Pix pelo Mercado Pago. O pedido entra na fila automaticamente quando o pagamento for aprovado.</div>
       )}
-      {order.payment_status === 'refund_pending' && <div className="alert danger small">Estorno pendente: verifique no painel do Mercado Pago.</div>}
+      {order.payment_status === 'refund_pending' && (
+        <div className="alert danger small row between wrap">
+          <span>
+            {order.payment_method === 'pix_online'
+              ? 'Estorno pendente: verifique no painel do Mercado Pago.'
+              : `Pedido cancelado após o pagamento: devolva ${brl(order.total_cents)} ao cliente.`}
+          </span>
+          {can('payments.confirm') && (
+            <button className="btn sm dark" disabled={busy} onClick={() => act(() => post(`/api/admin/orders/${id}/confirm-refund`), 'Devolução registrada')}>
+              Confirmar devolução
+            </button>
+          )}
+        </div>
+      )}
 
       <details>
         <summary className="bold small" style={{ cursor: 'pointer' }}>Histórico do pedido</summary>

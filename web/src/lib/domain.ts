@@ -17,8 +17,8 @@ export const PAYMENT_STATUS_LABELS: Record<string, string> = {
   pending: 'Pagamento pendente',
   paid: 'Pago',
   failed: 'Falhou',
-  refunded: 'Estornado',
-  refund_pending: 'Estorno pendente',
+  refunded: 'Devolvido/estornado',
+  refund_pending: 'Devolução pendente',
   cancelled: 'Cancelado',
 };
 

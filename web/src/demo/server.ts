@@ -349,7 +349,10 @@ const localDay = (iso: string) => {
 
 function cashSummary(db: DB, t: string, s: Row) {
   const until = s.closed_at ?? now();
-  const paid = db.orders.filter((o) => o.tenant_id === t && o.paid_at && o.paid_at >= s.opened_at && o.paid_at <= until);
+  const inWindow = db.orders.filter((o) => o.tenant_id === t && o.paid_at && o.paid_at >= s.opened_at && o.paid_at <= until);
+  const paid = inWindow.filter((o) => o.payment_status === 'paid');
+  const refunds = inWindow.filter((o) => ['refund_pending', 'refunded'].includes(o.payment_status)).map((o) => pick(o, ['id', 'number', 'customer_name', 'payment_method', 'payment_status', 'total_cents']));
+  const cashToReturn = refunds.filter((r) => r.payment_method === 'cash' && r.payment_status === 'refund_pending').reduce((a, r) => a + r.total_cents, 0);
   const methods = new Map<string, { payment_method: string; orders: number; total_cents: number }>();
   for (const o of paid) {
     const m = methods.get(o.payment_method) ?? { payment_method: o.payment_method, orders: 0, total_cents: 0 };
@@ -364,7 +367,8 @@ function cashSummary(db: DB, t: string, s: Row) {
   const byMethod = [...methods.values()];
   return {
     by_method: byMethod, total_received_cents: byMethod.reduce((a, m) => a + m.total_cents, 0), movements, supplies_cents: sup, withdrawals_cents: wd,
-    expected_cash_cents: s.opening_cents + (methods.get('cash')?.total_cents ?? 0) + sup - wd,
+    refunds, cash_to_return_cents: cashToReturn,
+    expected_cash_cents: s.opening_cents + (methods.get('cash')?.total_cents ?? 0) + cashToReturn + sup - wd,
     cancelled: { orders: cancelled.length, total_cents: cancelled.reduce((a, o) => a + o.total_cents, 0) },
   };
 }
@@ -556,6 +560,10 @@ on('POST', '/api/admin/orders/:id/status', ({ db, params, body }) => {
       if (c) c.used_count = Math.max(0, c.used_count - 1);
     }
     if (o!.payment_status === 'pending') o!.payment_status = 'cancelled';
+    else if (o!.payment_status === 'paid') {
+      o!.payment_status = 'refund_pending';
+      addEvent(o!, { type: 'payment', user_id: a.user.id, message: 'Pedido cancelado após pagamento: valor a devolver ao cliente' });
+    }
   }
   if (to === 'completed' && o!.payment_status === 'pending') {
     o!.payment_status = 'paid';
@@ -572,6 +580,16 @@ on('POST', '/api/admin/orders/:id/confirm-payment', ({ db, params }) => {
   o!.payment_status = 'paid';
   o!.paid_at = now();
   addEvent(o!, { type: 'payment', user_id: a.user.id, message: 'Pagamento confirmado pela equipe' });
+  queueMicrotask(() => emit(a.tenantId, o!, 'order.updated'));
+  return detail(db, a.tenantId, o!.id);
+});
+
+on('POST', '/api/admin/orders/:id/confirm-refund', ({ db, params }) => {
+  const a = perm(db, 'payments.confirm');
+  const o = db.orders.find((x) => x.id === params[0] && x.tenant_id === a.tenantId) ?? fail(404, 'not_found', 'Pedido não encontrado');
+  if (o!.payment_status !== 'refund_pending') fail(409, 'no_refund_pending', 'Este pedido não tem devolução pendente');
+  o!.payment_status = 'refunded';
+  addEvent(o!, { type: 'payment', user_id: a.user.id, message: 'Devolução ao cliente confirmada pela equipe' });
   queueMicrotask(() => emit(a.tenantId, o!, 'order.updated'));
   return detail(db, a.tenantId, o!.id);
 });

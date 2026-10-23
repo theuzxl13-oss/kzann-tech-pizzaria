@@ -4,7 +4,7 @@ import { requirePerm, tenantAuth } from '../../auth.js';
 import type { AppContext } from '../../context.js';
 import { withTenant } from '../../db.js';
 import { ORDER_STATUSES } from '../../domain/orderFlow.js';
-import { changeStatus, confirmManualPayment, getOrderDetail } from '../../services/orders.js';
+import { changeStatus, confirmManualPayment, confirmRefund, getOrderDetail } from '../../services/orders.js';
 import { idParam } from './crud.js';
 
 const listQuery = z.object({
@@ -102,6 +102,13 @@ export async function orderRoutes(f: FastifyInstance, app: AppContext) {
     const a = tenantAuth(req);
     const { id } = idParam.parse(req.params);
     await confirmManualPayment(app, a, id);
+    return withTenant(app.db, a.tenantId, (tx) => getOrderDetail(tx, id));
+  });
+
+  f.post('/api/admin/orders/:id/confirm-refund', { preHandler: requirePerm('payments.confirm') }, async (req) => {
+    const a = tenantAuth(req);
+    const { id } = idParam.parse(req.params);
+    await confirmRefund(app, a, id);
     return withTenant(app.db, a.tenantId, (tx) => getOrderDetail(tx, id));
   });
 

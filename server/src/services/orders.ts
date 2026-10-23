@@ -380,6 +380,13 @@ export async function changeStatus(
         if (order.payment_method === 'pix_online' && order.payment_status === 'paid') {
           needsRefund = true;
           await tx.query("UPDATE orders SET payment_status = 'refund_pending' WHERE id = $1", [orderId]);
+        } else if (order.payment_status === 'paid') {
+          // KZ-06: pagamento recebido na entrega/balcão precisa ser devolvido; não pode continuar "pago".
+          await tx.query("UPDATE orders SET payment_status = 'refund_pending' WHERE id = $1", [orderId]);
+          await tx.query(
+            "INSERT INTO order_events (tenant_id, order_id, type, user_id, message) VALUES ($1, $2, 'payment', $3, 'Pedido cancelado após pagamento: valor a devolver ao cliente')",
+            [actor.tenantId, orderId, actor.userId],
+          );
         } else if (order.payment_status === 'pending') {
           await tx.query("UPDATE orders SET payment_status = 'cancelled' WHERE id = $1", [orderId]);
         }
@@ -426,6 +433,27 @@ async function refundOnlinePayment(app: AppContext, tenantId: string, orderId: s
       ),
     );
   }
+}
+
+/** KZ-06: equipe confirma que devolveu o valor ao cliente (ou que fez o estorno manualmente no gateway). */
+export async function confirmRefund(app: AppContext, actor: { tenantId: string; userId: string }, orderId: string) {
+  await withTenant(
+    app.db,
+    actor.tenantId,
+    async (tx) => {
+      const { rows } = await tx.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
+      const order = rows[0];
+      if (!order) throw notFound('Pedido não encontrado');
+      if (order.payment_status !== 'refund_pending') throw conflict('no_refund_pending', 'Este pedido não tem devolução pendente');
+      await tx.query("UPDATE orders SET payment_status = 'refunded' WHERE id = $1", [orderId]);
+      await tx.query(
+        "INSERT INTO order_events (tenant_id, order_id, type, user_id, message) VALUES ($1, $2, 'payment', $3, 'Devolução ao cliente confirmada pela equipe')",
+        [actor.tenantId, orderId, actor.userId],
+      );
+      await notify(tx, { tenantId: actor.tenantId, orderId, type: 'order.updated', status: order.status, number: order.number });
+    },
+    actor.userId,
+  );
 }
 
 /** Confirmação MANUAL de recebimento (dinheiro, cartão na entrega, Pix pela chave). */

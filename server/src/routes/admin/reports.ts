@@ -12,10 +12,16 @@ const rangeQuery = z.object({ from: z.string().date(), to: z.string().date() });
 /** Resumo de um período de caixa: recebimentos por forma de pagamento e dinheiro esperado na gaveta. */
 async function cashSummary(tx: Tx, session: any) {
   const until = session.closed_at ?? new Date();
+  // KZ-06: só conta como recebido o que continua pago; cancelados após pagamento aparecem em "devoluções".
   const { rows: byMethod } = await tx.query(
     `SELECT payment_method, count(*)::int AS orders, COALESCE(sum(total_cents), 0)::int AS total_cents
-       FROM orders WHERE payment_status IN ('paid', 'refund_pending', 'refunded') AND paid_at >= $1 AND paid_at <= $2
+       FROM orders WHERE payment_status = 'paid' AND paid_at >= $1 AND paid_at <= $2
       GROUP BY payment_method ORDER BY payment_method`,
+    [session.opened_at, until],
+  );
+  const { rows: refunds } = await tx.query(
+    `SELECT id, number, customer_name, payment_method, payment_status, total_cents FROM orders
+      WHERE payment_status IN ('refund_pending', 'refunded') AND paid_at >= $1 AND paid_at <= $2 ORDER BY number`,
     [session.opened_at, until],
   );
   const { rows: movements } = await tx.query(
@@ -31,13 +37,19 @@ async function cashSummary(tx: Tx, session: any) {
       WHERE status = 'cancelled' AND cancelled_at >= $1 AND cancelled_at <= $2`,
     [session.opened_at, until],
   );
+  // Dinheiro "a devolver" ainda está fisicamente na gaveta até a equipe confirmar a devolução.
+  const cashToReturn = refunds
+    .filter((r) => r.payment_method === 'cash' && r.payment_status === 'refund_pending')
+    .reduce((s, r) => s + r.total_cents, 0);
   return {
     by_method: byMethod,
     total_received_cents: byMethod.reduce((s, r) => s + r.total_cents, 0),
     movements,
     supplies_cents: supplies,
     withdrawals_cents: withdrawals,
-    expected_cash_cents: session.opening_cents + cash + supplies - withdrawals,
+    refunds,
+    cash_to_return_cents: cashToReturn,
+    expected_cash_cents: session.opening_cents + cash + cashToReturn + supplies - withdrawals,
     cancelled: cancelled[0],
   };
 }

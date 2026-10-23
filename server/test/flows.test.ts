@@ -386,6 +386,34 @@ describe('KZ-24: histórico de pedidos', () => {
   });
 });
 
+describe('KZ-06: cancelamento de pedido já pago', () => {
+  test('vira "a devolver", segue na gaveta até a devolução e sai do esperado depois', async () => {
+    const a = owner.a;
+    expectOk(await a.post('/api/admin/cash/open', { opening_cents: 1000 }), 201);
+    const o = expectOk(await new Client(app).post('/api/public/bella/orders', {
+      items: [pizzaItem()], fulfillment: 'pickup', customer: { name: 'Hana Devolve', phone: '11911112222' }, payment_method: 'cash',
+    }), 201);
+    const paid = expectOk(await a.post(`/api/admin/orders/${o.id}/confirm-payment`));
+    const total = paid.total_cents;
+    let cash = expectOk(await a.get('/api/admin/cash/current')).summary;
+    assert.equal(cash.expected_cash_cents, 1000 + total);
+
+    const cancelled = expectOk(await a.post(`/api/admin/orders/${o.id}/status`, { status: 'cancelled', reason: 'Pizza queimou' }));
+    assert.equal(cancelled.payment_status, 'refund_pending');
+    cash = expectOk(await a.get('/api/admin/cash/current')).summary;
+    assert.equal(cash.by_method.find((m: any) => m.payment_method === 'cash'), undefined);
+    assert.equal(cash.cash_to_return_cents, total);
+    assert.equal(cash.expected_cash_cents, 1000 + total);
+
+    const refunded = expectOk(await a.post(`/api/admin/orders/${o.id}/confirm-refund`));
+    assert.equal(refunded.payment_status, 'refunded');
+    cash = expectOk(await a.get('/api/admin/cash/current')).summary;
+    assert.equal(cash.expected_cash_cents, 1000);
+    assert.equal((await a.post(`/api/admin/orders/${o.id}/confirm-refund`)).status, 409);
+    expectOk(await a.post('/api/admin/cash/close', { counted_cents: 1000 }));
+  });
+});
+
 describe('KZ-04: idempotência do pedido', () => {
   test('mesma chave enviada em paralelo e repetida gera um único pedido', async () => {
     const body = {
