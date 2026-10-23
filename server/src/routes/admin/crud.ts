@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requirePerm, tenantAuth } from '../../auth.js';
 import type { AppContext } from '../../context.js';
 import { withTenant, type Tx } from '../../db.js';
-import { badRequest, notFound } from '../../lib/errors.js';
+import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import type { Permission } from '../../lib/permissions.js';
 import { audit } from '../../services/tenants.js';
 
@@ -133,7 +133,16 @@ export function registerCrud<S extends z.ZodObject<any>>(f: FastifyInstance, app
       app.db,
       a.tenantId,
       async (tx) => {
-        const { rowCount } = await tx.query(`DELETE FROM ${o.table} WHERE id = $1`, [id]);
+        let rowCount: number | null;
+        try {
+          ({ rowCount } = await tx.query(`DELETE FROM ${o.table} WHERE id = $1`, [id]));
+        } catch (err: any) {
+          // 23503 = foreign_key_violation (NO ACTION), 23001 = restrict_violation (ON DELETE RESTRICT)
+          if (err?.code === '23503' || err?.code === '23001') {
+            throw conflict('in_use', 'Não é possível excluir: existem itens vinculados. Mova ou exclua esses itens antes, ou apenas oculte este registro.');
+          }
+          throw err;
+        }
         if (!rowCount) throw notFound();
         await audit(tx, a.tenantId, a.userId, 'delete', o.table, id);
       },

@@ -181,7 +181,18 @@ function EditSheet({ tab, item, data, onClose, onSaved }: { tab: Tab; item: any;
   };
 
   const remove = async () => {
-    if (!confirm(`Excluir "${f.name}"? Esta ação não pode ser desfeita.`)) return;
+    if (tab === 'categories') {
+      const linked = [...data.flavors, ...data.products].filter((x: any) => x.category_id === f.id).length;
+      if (linked > 0) {
+        toast(`Esta categoria tem ${linked} item(ns). Mova-os para outra categoria ou oculte a categoria em vez de excluir.`, 'error');
+        return;
+      }
+    }
+    const extra =
+      tab === 'sizes'
+        ? `\n\nAtenção: os preços deste tamanho em ${[...data.flavors, ...data.crusts].filter((x: any) => x.prices?.[f.id] !== undefined).length} sabor(es)/borda(s) também serão apagados. Se quiser só parar de vender, desmarque "Visível no cardápio".`
+        : '';
+    if (!confirm(`Excluir "${f.name}"? Esta ação não pode ser desfeita.${extra}`)) return;
     try {
       await del(`/api/admin/menu/${tab}/${f.id}`);
       toast('Excluído', 'ok');

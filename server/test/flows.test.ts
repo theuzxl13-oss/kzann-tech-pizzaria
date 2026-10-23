@@ -125,6 +125,16 @@ describe('cardápio e configurações', () => {
     assert.equal(r2.status, 400);
   });
 
+  test('KZ-05: categoria com itens não pode ser excluída (sem cascata silenciosa)', async () => {
+    const r = await owner.a.del(`/api/admin/menu/categories/${ids.catDrinks}`);
+    assert.equal(r.status, 409, JSON.stringify(r.body));
+    assert.equal(r.body.error.code, 'in_use');
+    const products = expectOk(await owner.a.get('/api/admin/menu/products'));
+    assert.ok(products.some((p: any) => p.id === ids.coca));
+    const empty = expectOk(await owner.a.post('/api/admin/menu/categories', { name: 'Vazia', kind: 'product' }), 201);
+    expectOk(await owner.a.del(`/api/admin/menu/categories/${empty.id}`));
+  });
+
   test('cardápio público mostra somente itens da própria pizzaria', async () => {
     const pub = expectOk(await new Client(app).get('/api/public/bella'));
     assert.equal(pub.tenant.name, 'Pizzaria Bella');

@@ -607,6 +607,10 @@ for (const [path, table] of [...Object.entries(MENU_TABLES).map(([k, v]) => [`/a
     const list = db[table] as Row[];
     const i = list.findIndex((r) => r.id === params[0] && r.tenant_id === tenantId);
     if (i < 0) fail(404, 'not_found', 'Não encontrado');
+    if (table === 'categories' && [...db.flavors, ...db.products].some((x) => x.category_id === params[0])) {
+      fail(409, 'in_use', 'Não é possível excluir: existem itens vinculados. Mova ou exclua esses itens antes, ou apenas oculte este registro.');
+    }
+    if (table === 'sizes') [...db.flavors, ...db.crusts].forEach((x) => delete x.prices?.[params[0]]);
     list.splice(i, 1);
     return { ok: true };
   });

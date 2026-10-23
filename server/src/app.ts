@@ -86,7 +86,7 @@ export async function buildApp(cfg: Config, opts: BuildOptions = {}): Promise<{ 
     if (err?.code === '23505') {
       return reply.code(409).send({ error: { code: 'duplicate', message: 'Registro duplicado' } });
     }
-    if (err?.code === '23503') {
+    if (err?.code === '23503' || err?.code === '23001') {
       return reply.code(409).send({ error: { code: 'in_use', message: 'Item em uso por outros registros' } });
     }
     if (err?.code === '22P02' || err?.code === '23514') {
